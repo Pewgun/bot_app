@@ -1,0 +1,4 @@
+fastapi
+uvicorn
+python-telegram-bot
+psycopg2-binary
