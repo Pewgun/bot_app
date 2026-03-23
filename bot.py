@@ -9,7 +9,7 @@ import psycopg2
 TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 DOMAIN = os.getenv("RAILWAY_STATIC_URL") # Provided by Railway
-PORT = int(os.getenv("PORT", 8080))
+PORT = int(os.getenv("PORT", 3000))
 
 app = FastAPI()
 # Initialize the Telegram Application
