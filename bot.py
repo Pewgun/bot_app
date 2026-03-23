@@ -1,4 +1,4 @@
-"""import os
+import os
 import logging
 from fastapi import FastAPI, Request
 from telegram import Update
@@ -43,7 +43,8 @@ async def on_startup():
     webhook_url = f"https://{DOMAIN}/webhook"
     await ptb_app.initialize()
     await ptb_app.bot.set_webhook(url=webhook_url)
-    await ptb_app.start()"""
+    await ptb_app.start()
+"""
 import os
 import asyncio
 import psycopg2
@@ -93,3 +94,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+"""
