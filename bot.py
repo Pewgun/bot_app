@@ -18,17 +18,23 @@ ptb_app = ApplicationBuilder().token(TOKEN).build()
 
 # 2. Database Logic
 def save_to_db(username, text):
-    with psycopg2.connect(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            print(f"DEBUG - text: {text}")
-            cur.execute("INSERT INTO messages (username, content) VALUES (%s, %s)", (username, text))
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO messages (username, content) VALUES (%s, %s)", (username, text))
             conn.commit()
+        logging.info(f"Message from {username} saved to database successfully.")
+    except Exception as e:
+        logging.error(f"Failed to save message to database: {e}")
 
 # 3. Bot Logic
 async def handle_message(update, context):
     user = update.message.from_user.username or "Anonymous"
     text = update.message.text
-    save_to_db(user, text)
+    try:
+        save_to_db(user, text)
+    except Exception as e:
+        logging.error(f"Error in handle_message while saving to database: {e}")
 
 ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
