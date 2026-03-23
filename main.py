@@ -1,4 +1,4 @@
-import os
+"""import os
 import logging
 from fastapi import FastAPI, Request
 from telegram import Update
@@ -43,4 +43,53 @@ async def on_startup():
     webhook_url = f"https://{DOMAIN}/webhook"
     await ptb_app.initialize()
     await ptb_app.bot.set_webhook(url=webhook_url)
-    await ptb_app.start()
+    await ptb_app.start()"""
+import os
+import asyncio
+import psycopg2
+from aiogram import Bot, Dispatcher, types
+
+# Railway provides DATABASE_URL automatically if you link the services
+DATABASE_URL = os.getenv("DATABASE_URL")
+TOKEN = os.getenv("BOT_TOKEN")
+
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+# Database setup
+def init_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id SERIAL PRIMARY KEY,
+            user_name TEXT,
+            chat_id BIGINT,
+            content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Catch-all handler for EVERY message
+@dp.message()
+async def save_message(message: types.Message):
+    if message.text: # Only save text messages
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO messages (user_name, chat_id, content) VALUES (%s, %s, %s)",
+            (message.from_user.full_name, message.chat.id, message.text)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+
+async def main():
+    init_db()
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
