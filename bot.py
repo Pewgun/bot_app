@@ -17,6 +17,23 @@ app = FastAPI()
 ptb_app = ApplicationBuilder().token(TOKEN).build()
 
 # 2. Database Logic
+def init_db():
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS messages (
+                        id SERIAL PRIMARY KEY,
+                        username TEXT,
+                        content TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            conn.commit()
+        logging.info("Database initialized: 'messages' table is ready.")
+    except Exception as e:
+        logging.error(f"Failed to initialize database: {e}")
+
 def save_to_db(username, text):
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
@@ -48,6 +65,7 @@ async def telegram_webhook(request: Request):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup Logic ---
+    init_db()
     webhook_url = f"https://{DOMAIN}/webhook"
     await ptb_app.initialize()
     await ptb_app.bot.set_webhook(url=webhook_url)
