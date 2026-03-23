@@ -21,7 +21,7 @@ def save_to_db(username, text):
     with psycopg2.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             logger.info("Ziņa veiksmīgi saglabāta datubāzē! {username} {text}")
-            cur.execute("INSERT INTO messages (username, content) VALUES (%s, %s)", (username, text))
+            await cur.execute("INSERT INTO messages (username, content) VALUES (%s, %s)", (username, text))
             conn.commit()
 
 # 3. Bot Logic
