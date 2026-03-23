@@ -7,6 +7,11 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 import psycopg2
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
 # 1. Configuration
 TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -17,7 +22,7 @@ PORT = int(os.getenv("PORT", 3000))
 ptb_app = ApplicationBuilder().token(TOKEN).build()
 
 # 2. Database Logic
-def init_db():
+async def init_db():
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
@@ -59,7 +64,7 @@ ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_messa
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup Logic ---
-    init_db()
+    await init_db()
     webhook_url = f"https://{DOMAIN}/webhook"
     await ptb_app.initialize()
     await ptb_app.bot.set_webhook(url=webhook_url)
