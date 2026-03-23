@@ -1,5 +1,6 @@
 import os
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -37,13 +38,28 @@ async def telegram_webhook(request: Request):
     await ptb_app.update_queue.put(Update.de_json(data, ptb_app.bot))
     return {"status": "ok"}
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Startup Logic ---
+    webhook_url = f"https://{DOMAIN}/webhook"
+    await ptb_app.initialize()
+    await ptb_app.bot.set_webhook(url=webhook_url)
+    await ptb_app.start()
+    
+    yield  # The application runs while this sits here
+    
+    # --- Shutdown Logic ---
+    await ptb_app.stop()
+    await ptb_app.shutdown()
+
 # 5. Startup: Tell Telegram where to send updates
-@app.on_event("startup")
+"""@app.on_event("startup")
 async def on_startup():
     webhook_url = f"https://{DOMAIN}/webhook"
     await ptb_app.initialize()
     await ptb_app.bot.set_webhook(url=webhook_url)
     await ptb_app.start()
+"""
 """
 import os
 import asyncio
