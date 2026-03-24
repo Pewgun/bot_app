@@ -44,7 +44,7 @@ def save_to_db(username, text):
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
                 cur.execute("INSERT INTO messages (username, content) VALUES (%s, %s)", (username, text))
-            conn.commit()
+                conn.commit()
         logging.info(f"Message from {username} saved to database successfully.")
     except Exception as e:
         logging.error(f"Failed to save message to database: {e}")
