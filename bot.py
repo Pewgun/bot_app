@@ -31,7 +31,7 @@ async def init_db():
                         id SERIAL PRIMARY KEY,
                         username TEXT,
                         content TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Riga'
                     )
                 """)
             conn.commit()
