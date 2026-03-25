@@ -29,8 +29,8 @@ async def init_db():
                 # Set the session timezone so that NOW() returns Europe/Riga
                 # time and naive timestamps are interpreted correctly during
                 # migration.
-                #cur.execute("SET timezone = 'Europe/Riga'")
-                cur.execute("ALTER DATABASE railway SET timezone TO 'Europe/Riga'")
+                cur.execute("SET timezone = 'Europe/Riga'")
+                #cur.execute("ALTER DATABASE railway SET timezone TO 'Europe/Riga'")
 
                 # Check whether the messages table already exists
                 cur.execute("""
