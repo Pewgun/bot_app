@@ -90,12 +90,6 @@ async def init_db():
                         cur.execute("DROP TABLE messages")
                         cur.execute("ALTER TABLE messages_new RENAME TO messages")
 
-                        # Changing time from utc to Latvia .
-                        
-                        cur.execute("
-                            UPDATE messages 
-                            SET created_at = created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Riga'")
-
                         logging.info("Migration complete: all old messages preserved with timezone-aware timestamps.")
                     else:
                         logging.info("'messages' table already has the correct schema. No migration needed.")
