@@ -58,7 +58,7 @@ async def init_db():
                                 id SERIAL PRIMARY KEY,
                                 username TEXT,
                                 content TEXT,
-                                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Riga'
+                                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                             )
                         """)
 
@@ -92,7 +92,7 @@ async def init_db():
                             id SERIAL PRIMARY KEY,
                             username TEXT,
                             content TEXT,
-                            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Riga'
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                         )
                     """)
                     logging.info("'messages' table created with timezone-aware schema.")
