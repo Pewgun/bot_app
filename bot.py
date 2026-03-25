@@ -26,14 +26,77 @@ async def init_db():
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
+                # Check whether the messages table already exists
                 cur.execute("""
-                    CREATE TABLE IF NOT EXISTS messages (
-                        id SERIAL PRIMARY KEY,
-                        username TEXT,
-                        content TEXT,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Riga'
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                        AND table_name = 'messages'
                     )
                 """)
+                table_exists = cur.fetchone()[0]
+
+                if table_exists:
+                    # Check if the existing table is missing timezone support on created_at.
+                    # We detect this by looking at the data_type of the column.
+                    cur.execute("""
+                        SELECT data_type FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                        AND table_name = 'messages'
+                        AND column_name = 'created_at'
+                    """)
+                    row = cur.fetchone()
+                    created_at_type = row[0] if row else None
+
+                    if created_at_type != 'timestamp with time zone':
+                        # Old schema detected — migrate data into a new table with the
+                        # correct schema, then swap it in place of the old one.
+                        logging.info("Old 'messages' schema detected. Starting safe migration...")
+
+                        cur.execute("""
+                            CREATE TABLE messages_new (
+                                id SERIAL PRIMARY KEY,
+                                username TEXT,
+                                content TEXT,
+                                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Riga'
+                            )
+                        """)
+
+                        # Copy all existing rows; treat the old timestamps as
+                        # Europe/Riga local time when converting to timestamptz.
+                        cur.execute("""
+                            INSERT INTO messages_new (id, username, content, created_at)
+                            SELECT id, username, content,
+                                   created_at AT TIME ZONE 'Europe/Riga'
+                            FROM messages
+                        """)
+
+                        # Carry the sequence forward so future inserts don't collide.
+                        cur.execute("""
+                            SELECT setval(
+                                pg_get_serial_sequence('messages_new', 'id'),
+                                COALESCE((SELECT MAX(id) FROM messages_new), 1)
+                            )
+                        """)
+
+                        cur.execute("DROP TABLE messages")
+                        cur.execute("ALTER TABLE messages_new RENAME TO messages")
+
+                        logging.info("Migration complete: all old messages preserved with timezone-aware timestamps.")
+                    else:
+                        logging.info("'messages' table already has the correct schema. No migration needed.")
+                else:
+                    # Fresh install — create the table with the correct schema from the start.
+                    cur.execute("""
+                        CREATE TABLE messages (
+                            id SERIAL PRIMARY KEY,
+                            username TEXT,
+                            content TEXT,
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Riga'
+                        )
+                    """)
+                    logging.info("'messages' table created with timezone-aware schema.")
+
             conn.commit()
         logging.info("Database initialized: 'messages' table is ready.")
     except Exception as e:
