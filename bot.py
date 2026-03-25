@@ -30,6 +30,7 @@ async def init_db():
                 # time and naive timestamps are interpreted correctly during
                 # migration.
                 cur.execute("SET timezone = 'Europe/Riga'")
+                cur.execute("ALTER DATABASE railway SET timezone TO 'Europe/Riga'")
 
                 # Check whether the messages table already exists
                 cur.execute("""
