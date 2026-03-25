@@ -92,7 +92,9 @@ async def init_db():
 
                         # Changing time from utc to Latvia .
                         
-                        cur.execute("UPDATE messages SET created_at = created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Riga'")
+                        cur.execute("
+                            UPDATE messages 
+                            SET created_at = created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Riga'")
 
                         logging.info("Migration complete: all old messages preserved with timezone-aware timestamps.")
                     else:
