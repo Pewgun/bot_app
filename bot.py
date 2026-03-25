@@ -26,6 +26,11 @@ async def init_db():
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
+                # Set the session timezone so that NOW() returns Europe/Riga
+                # time and naive timestamps are interpreted correctly during
+                # migration.
+                cur.execute("SET timezone = 'Europe/Riga'")
+
                 # Check whether the messages table already exists
                 cur.execute("""
                     SELECT EXISTS (
