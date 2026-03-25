@@ -72,10 +72,11 @@ async def init_db():
                         # Europe/Riga local time when converting to timestamptz.
                         cur.execute("""
                             INSERT INTO messages_new (id, username, content, created_at)
-                            SELECT id, username, content,
-                                   created_at AT TIME ZONE 'Europe/Riga'
+                            SELECT id, username, content, created_at
                             FROM messages
                         """)
+
+                        # AT TIME ZONE 'Europe/Riga'
 
                         # Carry the sequence forward so future inserts don't collide.
                         cur.execute("""
