@@ -64,7 +64,8 @@ async def init_db():
                                 id SERIAL PRIMARY KEY,
                                 username TEXT,
                                 content TEXT,
-                                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                                group_chat_id BIGINT
                             )
                         """)
 
@@ -92,7 +93,12 @@ async def init_db():
 
                         logging.info("Migration complete: all old messages preserved with timezone-aware timestamps.")
                     else:
-                        logging.info("'messages' table already has the correct schema. No migration needed.")
+                        logging.info("'messages' table already has the correct schema. Checking for missing columns...")
+                        cur.execute("""
+                            ALTER TABLE messages
+                            ADD COLUMN IF NOT EXISTS group_chat_id BIGINT
+                        """)
+                        logging.info("Column check complete.")
                 else:
                     # Fresh install — create the table with the correct schema from the start.
                     cur.execute("""
@@ -100,7 +106,8 @@ async def init_db():
                             id SERIAL PRIMARY KEY,
                             username TEXT,
                             content TEXT,
-                            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                            group_chat_id BIGINT
                         )
                     """)
                     logging.info("'messages' table created with timezone-aware schema.")
@@ -110,11 +117,14 @@ async def init_db():
     except Exception as e:
         logging.error(f"Failed to initialize database: {e}")
 
-def save_to_db(username, text):
+def save_to_db(username, text, chat_id=None):
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
-                cur.execute("INSERT INTO messages (username, content) VALUES (%s, %s)", (username, text))
+                cur.execute(
+                    "INSERT INTO messages (username, content, group_chat_id) VALUES (%s, %s, %s)",
+                    (username, text, chat_id)
+                )
                 conn.commit()
         logging.info(f"Message from {username} saved to database successfully.")
     except Exception as e:
@@ -124,11 +134,11 @@ def save_to_db(username, text):
 async def handle_message(update, context):
     user = update.message.from_user.username or "Anonymous"
     text = update.message.text
+    chat_id = update.message.chat.id
     try:
-        save_to_db(user, text)
+        save_to_db(user, text, chat_id)
     except Exception as e:
         logging.error(f"Error in handle_message while saving to database: {e}")
-
 ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # 4. Lifespan: startup and shutdown logic
