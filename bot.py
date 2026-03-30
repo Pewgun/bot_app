@@ -13,7 +13,9 @@ import psycopg2
 import psycopg2.extras
 from openai import OpenAI
 from openai import AuthenticationError, RateLimitError, OpenAIError
-import google.generativeai as genai  # Add this
+#import google.generativeai as genai  # Add this
+from google import genai  # Correct import for google-genai package
+from google.genai import types
 
 logging.basicConfig(
     level=logging.INFO,
