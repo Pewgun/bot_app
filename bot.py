@@ -11,7 +11,8 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 import psycopg2
 import psycopg2.extras
-import openai
+from openai import OpenAI
+from openai import AuthenticationError, RateLimitError, OpenAIError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +26,7 @@ DOMAIN = os.getenv("RAILWAY_STATIC_URL") # Provided by Railway
 PORT = int(os.getenv("PORT", 3000))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Initialize the Telegram Application
 ptb_app = ApplicationBuilder().token(TOKEN).build()
@@ -295,7 +296,7 @@ async def ai_analyze(body: AnalyzeRequest):
         )
         user_message = f"{body.prompt}\n\nMessages:\n{transcript}"
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -306,13 +307,13 @@ async def ai_analyze(body: AnalyzeRequest):
         analysis = response.choices[0].message.content
         logging.info("OpenAI analysis completed successfully")
         return JSONResponse(content={"analysis": analysis})
-    except openai.error.AuthenticationError:
+    except AuthenticationError:
         logging.error("OpenAI authentication failed — check OPENAI_API_KEY")
         raise HTTPException(status_code=503, detail="OpenAI authentication failed")
-    except openai.error.RateLimitError:
+    except RateLimitError:
         logging.error("OpenAI rate limit exceeded")
         raise HTTPException(status_code=429, detail="OpenAI rate limit exceeded — try again later")
-    except openai.error.OpenAIError as e:
+    except OpenAIError as e:
         logging.error(f"OpenAI API error: {e}")
         raise HTTPException(status_code=502, detail=f"OpenAI API error: {str(e)}")
     except Exception as e:
@@ -365,7 +366,7 @@ async def ai_search(body: SearchRequest):
         )
         user_message = f"Search query: {body.query}\n\nMessages:\n{transcript}"
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -389,13 +390,13 @@ async def ai_search(body: SearchRequest):
 
         logging.info(f"Search returned {len(results)} results")
         return JSONResponse(content={"results": results, "summary": summary})
-    except openai.error.AuthenticationError:
+    except AuthenticationError:
         logging.error("OpenAI authentication failed — check OPENAI_API_KEY")
         raise HTTPException(status_code=503, detail="OpenAI authentication failed")
-    except openai.error.RateLimitError:
+    except RateLimitError:
         logging.error("OpenAI rate limit exceeded")
         raise HTTPException(status_code=429, detail="OpenAI rate limit exceeded — try again later")
-    except openai.error.OpenAIError as e:
+    except OpenAIError as e:
         logging.error(f"OpenAI API error: {e}")
         raise HTTPException(status_code=502, detail=f"OpenAI API error: {str(e)}")
     except Exception as e:
