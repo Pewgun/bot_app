@@ -13,6 +13,7 @@ import psycopg2
 import psycopg2.extras
 from openai import OpenAI
 from openai import AuthenticationError, RateLimitError, OpenAIError
+import google.generativeai as genai  # Add this
 
 logging.basicConfig(
     level=logging.INFO,
