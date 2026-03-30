@@ -24,9 +24,12 @@ TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 DOMAIN = os.getenv("RAILWAY_STATIC_URL") # Provided by Railway
 PORT = int(os.getenv("PORT", 3000))
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
 # Initialize the Telegram Application
 ptb_app = ApplicationBuilder().token(TOKEN).build()
@@ -273,11 +276,56 @@ async def get_groups():
         logging.error(f"GET /api/groups error: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch groups")
 
+@app.post("/api/ai/gemanalyze")
+async def ai_analyze(body: AnalyzeRequest):
+    """Send a list of messages to Google Gemini and return an analysis."""
+    logging.info(f"POST /api/ai/gemanalyze — {len(body.messages)} messages")
+    
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="Gemini API key is not configured")
+        
+    try:
+        # Build the transcript
+        transcript_lines = []
+        for msg in body.messages:
+            username = msg.get("username", "Unknown")
+            content = msg.get("content", "")
+            created_at = msg.get("created_at", "")
+            transcript_lines.append(f"[{created_at}] {username}: {content}")
+        transcript = "\n".join(transcript_lines)
 
-@app.post("/api/ai/analyze")
+        # Gemini uses a single prompt string or a list of parts
+        full_prompt = (
+            "You are a helpful assistant that analyses Telegram group chat messages. "
+            "Answer concisely and in the same language as the messages when possible.\n\n"
+            f"User Task: {body.prompt}\n\n"
+            f"Messages Transcript:\n{transcript}"
+        )
+
+        # Generate content
+        response = gemini_model.generate_content(
+            full_prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.3,
+                # max_output_tokens=500, # Optional safety cap
+            )
+        )
+        
+        analysis = response.text
+        logging.info("Gemini analysis completed successfully")
+        return JSONResponse(content={"analysis": analysis})
+
+    except Exception as e:
+        logging.error(f"Gemini API error: {e}")
+        # Google's library raises standard Exceptions, but we can catch 429 specifically if needed
+        if "429" in str(e):
+             raise HTTPException(status_code=429, detail="Gemini rate limit exceeded")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze messages: {str(e)}")
+
+@app.post("/api/ai/gptanalyze")
 async def ai_analyze(body: AnalyzeRequest):
     """Send a list of messages to OpenAI and return an analysis."""
-    logging.info(f"POST /api/ai/analyze — {len(body.messages)} messages, prompt length={len(body.prompt)}")
+    logging.info(f"POST /api/ai/gptanalyze — {len(body.messages)} messages, prompt length={len(body.prompt)}")
     if not OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="OpenAI API key is not configured")
     try:
