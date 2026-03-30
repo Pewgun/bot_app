@@ -33,7 +33,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 #gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-gemini_model = genai.Client(api_key=os.getenv("GEMINI_API_KEY")
+gemini_model = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Initialize the Telegram Application
 ptb_app = ApplicationBuilder().token(TOKEN).build()
