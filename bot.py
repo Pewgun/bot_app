@@ -297,7 +297,7 @@ async def ai_analyze(body: AnalyzeRequest):
         user_message = f"{body.prompt}\n\nMessages:\n{transcript}"
 
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
