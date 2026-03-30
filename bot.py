@@ -309,7 +309,8 @@ async def ai_analyze(body: AnalyzeRequest):
         # Generate content
         response = gemini_model.models.generate_content(
             #model="gemini-2.0-flash",
-            model="Gemini 2.5 Flash-Lite",
+            #model="Gemini 2.5 Flash-Lite",
+            model="gemini-2.5-flash-lite",
             contents=full_prompt,
             config=types.GenerateContentConfig(
                 temperature=0.3,
