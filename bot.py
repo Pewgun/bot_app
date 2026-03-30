@@ -32,7 +32,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+#gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+gemini_model = genai.Client(api_key=os.getenv("GEMINI_API_KEY")
 
 # Initialize the Telegram Application
 ptb_app = ApplicationBuilder().token(TOKEN).build()
@@ -306,9 +307,10 @@ async def ai_analyze(body: AnalyzeRequest):
         )
 
         # Generate content
-        response = gemini_model.generate_content(
-            full_prompt,
-            generation_config=genai.types.GenerationConfig(
+        response = gemini_model.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=full_prompt,
+            config=types.GenerationConfig(
                 temperature=0.3,
                 # max_output_tokens=500, # Optional safety cap
             )
