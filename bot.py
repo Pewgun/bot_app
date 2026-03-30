@@ -310,7 +310,7 @@ async def ai_analyze(body: AnalyzeRequest):
         response = gemini_model.models.generate_content(
             model="gemini-2.0-flash",
             contents=full_prompt,
-            config=types.GenerationConfig(
+            config=types.GenerateContentConfig(
                 temperature=0.3,
                 # max_output_tokens=500, # Optional safety cap
             )
