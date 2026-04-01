@@ -133,6 +133,27 @@ async def init_db():
                     """)
                     logging.info("'messages' table created with timezone-aware schema.")
 
+                # Create conversations and conversation_messages tables (idempotent)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS conversations (
+                        id SERIAL PRIMARY KEY,
+                        title VARCHAR(255),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS conversation_messages (
+                        id SERIAL PRIMARY KEY,
+                        conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                        role VARCHAR(50) NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                logging.info("'conversations' and 'conversation_messages' tables are ready.")
+
             conn.commit()
         logging.info("Database initialized: 'messages' table is ready.")
     except Exception as e:
@@ -171,6 +192,15 @@ class AnalyzeRequest(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
+
+class ConversationCreate(BaseModel):
+    title: Optional[str] = None
+
+class ConversationUpdate(BaseModel):
+    title: str
+
+class MessageCreate(BaseModel):
+    content: str
 
 # 5. Lifespan: startup and shutdown logic
 @asynccontextmanager
@@ -457,6 +487,236 @@ async def ai_search(body: SearchRequest):
     except Exception as e:
         logging.error(f"POST /api/ai/search unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Failed to search messages")
+
+
+# 10. Conversation API Routes
+
+@app.post("/api/conversations")
+async def create_conversation(body: ConversationCreate):
+    """Create a new conversation."""
+    logging.info(f"POST /api/conversations — title={body.title!r}")
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO conversations (title)
+                    VALUES (%s)
+                    RETURNING id, title, created_at
+                    """,
+                    (body.title,),
+                )
+                row = dict(cur.fetchone())
+            conn.commit()
+        row["created_at"] = row["created_at"].isoformat() if row["created_at"] else None
+        logging.info(f"Conversation created with id={row['id']}")
+        return JSONResponse(content=row, status_code=201)
+    except Exception as e:
+        logging.error(f"POST /api/conversations error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create conversation")
+
+
+@app.get("/api/conversations")
+async def get_conversations():
+    """Return all conversations ordered by most recently updated."""
+    logging.info("GET /api/conversations")
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT id, title, created_at, updated_at
+                    FROM conversations
+                    ORDER BY updated_at DESC
+                    """
+                )
+                rows = cur.fetchall()
+        conversations = [
+            {
+                **dict(row),
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+            }
+            for row in rows
+        ]
+        logging.info(f"Returning {len(conversations)} conversations")
+        return JSONResponse(content=conversations)
+    except Exception as e:
+        logging.error(f"GET /api/conversations error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch conversations")
+
+
+@app.get("/api/conversations/{conversation_id}")
+async def get_conversation(conversation_id: int):
+    """Return a single conversation with all its messages."""
+    logging.info(f"GET /api/conversations/{conversation_id}")
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT id, title, created_at, updated_at FROM conversations WHERE id = %s",
+                    (conversation_id,),
+                )
+                conv_row = cur.fetchone()
+                if conv_row is None:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+
+                cur.execute(
+                    """
+                    SELECT role, content, created_at
+                    FROM conversation_messages
+                    WHERE conversation_id = %s
+                    ORDER BY created_at ASC
+                    """,
+                    (conversation_id,),
+                )
+                msg_rows = cur.fetchall()
+
+        messages = [
+            {
+                **dict(m),
+                "created_at": m["created_at"].isoformat() if m["created_at"] else None,
+            }
+            for m in msg_rows
+        ]
+        result = {
+            "id": conv_row["id"],
+            "title": conv_row["title"],
+            "created_at": conv_row["created_at"].isoformat() if conv_row["created_at"] else None,
+            "updated_at": conv_row["updated_at"].isoformat() if conv_row["updated_at"] else None,
+            "messages": messages,
+        }
+        return JSONResponse(content=result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"GET /api/conversations/{conversation_id} error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch conversation")
+
+
+@app.post("/api/conversations/{conversation_id}/messages")
+async def add_message(conversation_id: int, body: MessageCreate):
+    """Add a user message to a conversation and return the AI assistant reply."""
+    logging.info(f"POST /api/conversations/{conversation_id}/messages")
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=503, detail="OpenAI API key is not configured")
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # Verify the conversation exists
+                cur.execute("SELECT id FROM conversations WHERE id = %s", (conversation_id,))
+                if cur.fetchone() is None:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+
+                # Fetch existing messages to build the full context for the model
+                cur.execute(
+                    """
+                    SELECT role, content
+                    FROM conversation_messages
+                    WHERE conversation_id = %s
+                    ORDER BY created_at ASC
+                    """,
+                    (conversation_id,),
+                )
+                history = [dict(r) for r in cur.fetchall()]
+
+                # Persist the new user message
+                cur.execute(
+                    """
+                    INSERT INTO conversation_messages (conversation_id, role, content)
+                    VALUES (%s, 'user', %s)
+                    RETURNING id, role, content, created_at
+                    """,
+                    (conversation_id, body.content),
+                )
+                user_msg = dict(cur.fetchone())
+
+            conn.commit()
+
+        # Build the message list for OpenAI (history + new user turn)
+        openai_messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            *history,
+            {"role": "user", "content": body.content},
+        ]
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=openai_messages,
+                temperature=0.7,
+            )
+            assistant_content = response.choices[0].message.content
+        except AuthenticationError:
+            logging.error("OpenAI authentication failed — check OPENAI_API_KEY")
+            raise HTTPException(status_code=503, detail="OpenAI authentication failed")
+        except RateLimitError:
+            logging.error("OpenAI rate limit exceeded")
+            raise HTTPException(status_code=429, detail="OpenAI rate limit exceeded — try again later")
+        except OpenAIError as e:
+            logging.error(f"OpenAI API error: {e}")
+            raise HTTPException(status_code=502, detail=f"OpenAI API error: {str(e)}")
+
+        # Persist the assistant reply and bump updated_at on the conversation
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO conversation_messages (conversation_id, role, content)
+                    VALUES (%s, 'assistant', %s)
+                    RETURNING id, role, content, created_at
+                    """,
+                    (conversation_id, assistant_content),
+                )
+                assistant_msg = dict(cur.fetchone())
+
+                cur.execute(
+                    "UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                    (conversation_id,),
+                )
+            conn.commit()
+
+        user_msg["created_at"] = user_msg["created_at"].isoformat() if user_msg["created_at"] else None
+        assistant_msg["created_at"] = assistant_msg["created_at"].isoformat() if assistant_msg["created_at"] else None
+
+        return JSONResponse(
+            content={"user_message": user_msg, "assistant_message": assistant_msg},
+            status_code=201,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"POST /api/conversations/{conversation_id}/messages error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process message")
+
+
+@app.patch("/api/conversations/{conversation_id}")
+async def update_conversation(conversation_id: int, body: ConversationUpdate):
+    """Update the title of an existing conversation."""
+    logging.info(f"PATCH /api/conversations/{conversation_id} — title={body.title!r}")
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    UPDATE conversations
+                    SET title = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING id, title
+                    """,
+                    (body.title, conversation_id),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+            conn.commit()
+        logging.info(f"Conversation {conversation_id} title updated")
+        return JSONResponse(content=dict(row))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"PATCH /api/conversations/{conversation_id} error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update conversation")
 
 
 if __name__ == "__main__":
