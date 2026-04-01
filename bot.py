@@ -740,7 +740,9 @@ async def add_message(conversation_id: int, body: MessageCreate):
         
         try:
             # 3. Start a chat session with the history
-            chat = client.chats.create(
+            #gemini_model.models.generate_content
+            #chat = client.chats.create(
+            chat = gemini_models.chats.create(
                 #model="gemini-2.0-flash",
                 model="gemini-2.5-flash-lite",
                 config=types.GenerateContentConfig(
