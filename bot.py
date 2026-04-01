@@ -639,23 +639,34 @@ async def add_message(conversation_id: int, body: MessageCreate):
             *history,
             {"role": "user", "content": body.content},
         ]
-
+        ############################
+        gemini_history = []
+        for msg in history:
+            role = "model" if msg["role"] == "assistant" else "user"
+            gemini_history.append({"role": role, "parts": [{"text": msg["content"]}]})
+        
         try:
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=openai_messages,
-                temperature=0.7,
+            # 3. Start a chat session with the history
+            chat = client.chats.create(
+                #model="gemini-2.0-flash",
+                model="gemini-2.5-flash-lite",
+                config=types.GenerateContentConfig(
+                    system_instruction="You are a helpful assistant.",
+                    temperature=0.7,
+                ),
+                history=gemini_history # This injects your previous messages
             )
-            assistant_content = response.choices[0].message.content
-        except AuthenticationError:
-            logging.error("OpenAI authentication failed — check OPENAI_API_KEY")
-            raise HTTPException(status_code=503, detail="OpenAI authentication failed")
-        except RateLimitError:
-            logging.error("OpenAI rate limit exceeded")
-            raise HTTPException(status_code=429, detail="OpenAI rate limit exceeded — try again later")
-        except OpenAIError as e:
-            logging.error(f"OpenAI API error: {e}")
-            raise HTTPException(status_code=502, detail=f"OpenAI API error: {str(e)}")
+        
+            # 4. Send the new user message
+            response = chat.send_message(body.content)
+            
+            # 5. Get the text (Equivalent to response.choices[0].message.content)
+            assistant_content = response.text
+        
+        except Exception as e:
+            print(f"Gemini Error: {e}")
+
+        #####################
 
         # Persist the assistant reply and bump updated_at on the conversation
         with psycopg2.connect(DATABASE_URL) as conn:
