@@ -593,8 +593,101 @@ async def get_conversation(conversation_id: int):
         logging.error(f"GET /api/conversations/{conversation_id} error: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch conversation")
 
-
 @app.post("/api/conversations/{conversation_id}/messages")
+async def add_message(conversation_id: int, body: MessageCreate):
+    """Add a user message to a conversation and return the Gemini reply."""
+    logging.info(f"POST /api/conversations/{conversation_id}/messages")
+    
+    # 1. Check for Gemini Key (Updated variable name check)
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(status_code=503, detail="Gemini API key is not configured")
+
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # Verify conversation exists
+                cur.execute("SELECT id FROM conversations WHERE id = %s", (conversation_id,))
+                if cur.fetchone() is None:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+
+                # Fetch existing messages for context
+                cur.execute(
+                    "SELECT role, content FROM conversation_messages WHERE conversation_id = %s ORDER BY created_at ASC",
+                    (conversation_id,),
+                )
+                history = [dict(r) for r in cur.fetchall()]
+
+                # Persist the new user message
+                cur.execute(
+                    """
+                    INSERT INTO conversation_messages (conversation_id, role, content)
+                    VALUES (%s, 'user', %s)
+                    RETURNING id, role, content, created_at
+                    """,
+                    (conversation_id, body.content),
+                )
+                user_msg = dict(cur.fetchone())
+            conn.commit()
+
+        # 2. Format History for Gemini (IMPORTANT: 'assistant' -> 'model')
+        gemini_history = []
+        for msg in history:
+            # Gemini strictly requires 'model' instead of 'assistant'
+            role = "model" if msg["role"] in ["assistant", "model"] else "user"
+            gemini_history.append({"role": role, "parts": [{"text": msg["content"]}]})
+        
+        # 3. Call Gemini
+        try:
+            chat = client.chats.create(
+                model="gemini-2.0-flash", # Use 2.0 Flash for 2026 standards
+                config=types.GenerateContentConfig(
+                    system_instruction="You are a helpful assistant.",
+                    temperature=0.7,
+                ),
+                history=gemini_history
+            )
+            response = chat.send_message(body.content)
+            assistant_content = response.text
+        except Exception as ai_err:
+            logging.error(f"Gemini API Error: {ai_err}")
+            raise HTTPException(status_code=502, detail=f"AI Provider Error: {str(ai_err)}")
+
+        # 4. Persist the assistant reply
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO conversation_messages (conversation_id, role, content)
+                    VALUES (%s, 'assistant', %s)
+                    RETURNING id, role, content, created_at
+                    """,
+                    (conversation_id, assistant_content),
+                )
+                assistant_msg = dict(cur.fetchone())
+
+                # Update conversation timestamp
+                cur.execute(
+                    "UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                    (conversation_id,),
+                )
+            conn.commit()
+
+        # 5. Format dates for JSON
+        user_msg["created_at"] = user_msg["created_at"].isoformat() if user_msg.get("created_at") else None
+        assistant_msg["created_at"] = assistant_msg["created_at"].isoformat() if assistant_msg.get("created_at") else None
+
+        return JSONResponse(
+            content={"user_message": user_msg, "assistant_message": assistant_msg},
+            status_code=201,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"POST /api/conversations/{conversation_id}/messages error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@app.post("/api/conversations/{conversation_id}/messagess")
 async def add_message(conversation_id: int, body: MessageCreate):
     """Add a user message to a conversation and return the AI assistant reply."""
     logging.info(f"POST /api/conversations/{conversation_id}/messages")
