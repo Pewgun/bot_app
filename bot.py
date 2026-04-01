@@ -639,7 +639,7 @@ async def add_message(conversation_id: int, body: MessageCreate):
         # 3. Call Gemini
         try:
             chat = client.chats.create(
-                model="gemini-2.0-flash", # Use 2.0 Flash for 2026 standards
+                model="gemini-2.5-flash-lite", # Use 2.0 Flash for 2026 standards
                 config=types.GenerateContentConfig(
                     system_instruction="You are a helpful assistant.",
                     temperature=0.7,
